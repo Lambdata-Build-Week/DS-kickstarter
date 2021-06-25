@@ -1,14 +1,24 @@
 # Imports from 3rd party libraries
+import pandas as pd
+import numpy as np
+from catboost import CatBoostClassifier, Pool
+import pickle
 import dash
 import dash_bootstrap_components as dbc
 import dash_core_components as dcc
 import dash_html_components as html
 from dash.dependencies import Input, Output
+
 # import dash_design_kit as ddk
 import dash_daq as daq
 
 # Imports from this application
 from app import app
+
+# loading the model and df to extract unique categories
+model = pickle.load(open("model/kickstarter_model.sav", "rb"))
+df = pickle.load(open("model/kickstarter_dataframe.pkl", "rb"))
+categories = sorted(df.category.unique())
 
 # 2 column layout. 1st column width = 4/12
 # https://dash-bootstrap-components.opensource.faculty.ai/l/components/layout
@@ -27,15 +37,15 @@ column1 = dbc.Col(
         dcc.Slider(
             id='slider1',
             min=0,
-            max=50000,
-            step=100,
-            value=5000,
+            max=100000,
+            step=1000,
+            value=20000,
             marks={0: '0',
-                   10000: '$10000',
-                   20000: '$20000',
-                   30000: '$30000',
-                   40000: '$40000',
-                   50000: '$50000'},
+                   20000: '$20k',
+                   40000: '$40k',
+                   60000: '$60k',
+                   80000: '$80k',
+                   100000: '100k'},
             className='mb-3'  # this gives margin spacing to the bottom
         ),
 
@@ -45,17 +55,11 @@ column1 = dbc.Col(
         dcc.Markdown("What category does your project fall under?"),
 
         dcc.Dropdown(
+            id='cat_dropdown',
             options=[
-                {'label': 'Digital Art', 'value': 'Digital Art'},
-                {'label': '3D Printing', 'value': '3D Printing'},
-                {'label': 'Mixed Media', 'value': 'Farms'},
-                {'label': 'People', 'value': 'People'},
-                {'label': 'Web', 'value': 'Web'},
-                {'label': 'Photobooks', 'value': 'Photobooks'},
-                {'label': 'Animals', 'value': 'Animals'},
-                {'label': 'Rock', 'value': 'Rock'},
-                {'label': 'Graphic Novels', 'value': 'Graphic Novels'}
+                {'label': i, 'value': i} for i in categories
             ],
+            value='Young Adult',
             placeholder="Select a Category",
             className='mb-5'
         ),
@@ -83,24 +87,16 @@ column1 = dbc.Col(
         dcc.Markdown("", id='output2',
                      className='mb-5'),
 
-        dcc.Markdown("What month will you be launching your project?"),
+        dcc.Markdown("Are you a Staff Pick?"),
 
         dcc.Dropdown(
+            id='staff_pick_dropdown',
             options=[
-                {'label': 'January', 'value': 'January'},
-                {'label': 'February', 'value': 'February'},
-                {'label': 'March', 'value': 'March'},
-                {'label': 'April', 'value': 'April'},
-                {'label': 'May', 'value': 'May'},
-                {'label': 'June', 'value': 'June'},
-                {'label': 'July', 'value': 'July'},
-                {'label': 'August', 'value': 'August'},
-                {'label': 'September', 'value': 'September'},
-                {'label': 'October', 'value': 'October'},
-                {'label': 'November', 'value': 'November'},
-                {'label': 'December', 'value': 'December'},
+                {'label': 'Yes', 'value': 1},
+                {'label': 'No', 'value': 0}
             ],
-            placeholder="Select a Month",
+            value=1,
+            placeholder="Select Yes or No",
             className='mb-5'
 
 )  
@@ -124,16 +120,12 @@ column3 = dbc.Col(
         ),
 
         daq.Gauge(
-        id ='my-daq-gauge',
-        min =0,
-        max =100,
-        value =80),
+        id ='pred-gauge',
+        min=0,
+        max=100,
+        value=80),
 
-        dcc.Markdown(
-            """
-            More text options to be added later.
-            """
-        ),
+        dcc.Markdown("", id="predict_text", className='mb-50'),
 
 
     ],
@@ -158,3 +150,43 @@ def update_output_div(input_value):
 )
 def update_output_div2(input_value):
     return '***Your project will be open {} days for funding***'.format(input_value)
+
+@app.callback(
+    Output(component_id='pred-gauge', component_property='value'),
+    [Input(component_id='slider1', component_property='value'),
+    Input(component_id='cat_dropdown', component_property='value'),
+    Input(component_id='slider2', component_property='value'),
+    Input(component_id='staff_pick_dropdown', component_property='value')]
+)
+def predict(goal, category, fundPeriodDays, staff_pick):
+    """
+    A function that returns the likelihood of achieving a fundraising goal 
+    on Kickstarter
+
+    Parameters
+    ----------
+        category: str (valid category)
+        staff_pick: str ("Yes" or "No")
+        goal: int (0-100000)
+        fundPeriodDays: int
+
+    Returns
+    -------
+        probability: float
+    """
+    features = {
+        'category': category,
+        'staff_pick': staff_pick,
+        'goal': goal,
+        'fundPeriodDays' : fundPeriodDays
+    }
+
+    df = pd.DataFrame(features, index=[0])
+
+    return round((model.predict_proba(df)[0][1] * 100), 1)
+
+@app.callback(
+    Output(component_id='predict_text', component_property='children'),
+    [Input(component_id='pred-gauge', component_property='value')])
+def update_predict_text(gauge_val):
+    return "You can expect to achieve your fundraising goal {}% of the time".format(gauge_val)

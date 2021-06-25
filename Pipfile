@@ -13,6 +13,8 @@ plotly = "*"
 pandas = "*"
 dash-daq = "*"
 dash-design-kit = "*"
+catboost = "*"
+numpy = "*"
 
 [requires]
 python_version = "3"
